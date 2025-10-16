@@ -1,0 +1,483 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Scatter Plot Matrix - 연금복권 미수령률 분석</title>
+    <link rel="stylesheet" as="style" crossorigin href="https://cdn.jsdelivr.net/gh/orioncactus/pretendard@v1.3.9/dist/web/variable/pretendardvariable.min.css" />
+    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/papaparse@5.4.1/papaparse.min.js"></script>
+    <style>
+        body {
+            font-family: 'Pretendard Variable', Pretendard, -apple-system, BlinkMacSystemFont, system-ui, Roboto, 'Helvetica Neue', 'Segoe UI', 'Apple SD Gothic Neo', 'Noto Sans KR', 'Malgun Gothic', 'Apple Color Emoji', 'Segoe UI Emoji', 'Segoe UI Symbol', sans-serif;
+            margin: 0;
+            padding: 20px;
+            background-color: #000000;
+            color: #ffffff;
+        }
+        
+        h1 {
+            text-align: center;
+            color: #ffffff;
+            margin-bottom: 30px;
+            font-size: 2.2em;
+        }
+        .description {
+            text-align: center;
+            color: #cccccc;
+            margin-bottom: 40px;
+            font-size: 1.1em;
+            line-height: 1.6;
+        }
+        .matrix-container {
+            display: grid;
+            grid-template-columns: repeat(3, 1fr);
+            gap: 20px;
+            margin-bottom: 40px;
+        }
+        .chart-container {
+            position: relative;
+            height: 300px;
+            border: 0px solid #444444;
+            border-radius: 8px;
+            padding: 15px;
+            background-color: #000000;
+        }
+        .chart-title {
+            text-align: center;
+            font-weight: bold;
+            margin-bottom: 10px;
+            color: #ffffff;
+            font-size: 0.9em;
+        }
+        .correlation-info {
+            background-color: #2a2a2a;
+            padding: 20px;
+            border-radius: 8px;
+            margin-top: 30px;
+        }
+        .correlation-table {
+            width: 100%;
+            border-collapse: collapse;
+            margin-top: 15px;
+        }
+        .correlation-table th,
+        .correlation-table td {
+            border: 1px solid #444444;
+            padding: 12px;
+            text-align: center;
+            color: #ffffff;
+            background-color: #2a2a2a;
+        }
+        .correlation-table th {
+            background-color: #FFD700;
+            color: #000000;
+            font-weight: bold;
+        }
+        .correlation-table tr:nth-child(even) {
+            background-color: #2a2a2a;
+        }
+        .correlation-value {
+            font-weight: bold;
+        }
+        .positive {
+            color: #e74c3c;
+        }
+        .negative {
+            color: #3498db;
+        }
+        .weak {
+            opacity: 0.6;
+        }
+        .loading {
+            text-align: center;
+            padding: 50px;
+            font-size: 1.2em;
+            color: #cccccc;
+        }
+        .strength-strong {
+            background-color: #FFD700;
+            color: #000000;
+            padding: 2px 6px;
+            border-radius: 4px;
+            font-weight: 900;
+        }
+        .strength-moderate {
+            background-color: #FFD700;
+            color: #000000;
+            padding: 2px 6px;
+            border-radius: 4px;
+            font-weight: 600;
+        }
+        .strength-weak {
+            background-color: #FFD700;
+            color: #000000;
+            padding: 2px 6px;
+            border-radius: 4px;
+            font-weight: 300;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <h1>연금복권 미수령률(주간) Scatter Plot Matrix</h1>
+        <div class="description">
+            미수령률(%)을 종속변수로 하여 각 독립변수들과의 관계를 분석한 산점도 매트릭스입니다.<br>
+            각 차트는 미수령률과 해당 변수 간의 상관관계를 시각적으로 보여줍니다.
+        </div>
+        
+        <div id="loading" class="loading">
+            데이터를 로딩하고 있습니다...
+        </div>
+        
+        <div id="matrix-container" class="matrix-container" style="display: none;">
+            <!-- Scatter plots will be generated here -->
+        </div>
+        
+        <div id="correlation-info" class="correlation-info" style="display: none;">
+            <h3>상관계수 및 회귀분석 결과</h3>
+            <p>미수령률과 각 변수들 간의 피어슨 상관계수와 선형 회귀분석 결과입니다. R²는 회귀선이 데이터를 얼마나 잘 설명하는지를 나타내며, 1에 가까울수록 좋은 설명력을 의미합니다.</p>
+            <table class="correlation-table" id="correlation-table">
+                <!-- Correlation table will be generated here -->
+            </table>
+        </div>
+    </div>
+
+    <script>
+        // CSV 데이터
+        const csvData = `date,draw_number,Unclaimed Rate (%),Total Unclaimed Prize (KRW),Total Prize Amount (KRW),Consumer Sentiment Index,Unemployment Rate (%),KOSPI Index,Average Temperature (°C),Temperature Change (°C),Precipitation (mm),Sunshine Duration (hr),Holiday (0/1),Salary Week (0/1)
+2024.10.3,231,0.93,"₩57,998,000 ","₩6,253,189,000 ",101.8,2.7,"3,657.28",14.5,8.3,4.7,150.9,1,0
+2024.9.26,230,1.37,"₩49,459,000 ","₩3,601,504,000 ",100,2.5,"3,424.60",22.8,4.8,0.6,176.8,0,1
+2024.9.19,229,1.30,"₩53,800,000 ","₩4,143,906,000 ",100,2.5,"3,424.60",27.6,1.6,1.3,176.8,0,0
+2024.9.12,228,0.73,"₩50,035,000 ","₩6,867,973,000 ",100,2.5,"3,424.60",26,0.1,15.9,176.8,0,0
+2024.9.5,227,1.27,"₩53,235,000 ","₩4,177,348,000 ",100,2.5,"3,424.60",26.1,0.9,0.9,176.8,0,0
+2024.8.29,226,0.75,"₩50,923,000 ","₩6,813,478,000 ",100.8,2.4,"3,186.01",27,1.1,3.5,246.9,0,1
+2024.8.22,225,0.75,"₩46,289,000 ","₩6,186,477,000 ",100.8,2.4,"3,186.01",28.1,0.2,4.6,246.9,0,1
+2024.8.15,224,0.59,"₩40,572,000 ","₩6,824,772,000 ",100.8,2.4,"3,186.01",27.9,0.4,2.4,246.9,1,0
+2024.8.8,223,0.69,"₩42,042,000 ","₩6,088,686,000 ",100.8,2.4,"3,186.01",27.5,1.7,3.6,246.9,0,0
+2024.8.1,222,0.64,"₩43,605,000 ","₩6,802,016,000 ",100.8,2.4,"3,186.01",29.2,0.9,0,246.9,0,0
+2024.7.25,221,0.66,"₩41,508,000 ","₩6,322,311,000 ",103.7,2.5,"3,245.44",28.3,2.6,4.9,140.4,0,1
+2024.7.18,220,17.66,"₩641,696,000 ","₩3,633,201,000 ",103.7,2.5,"3,245.44",25.7,1.6,38.8,140.4,0,0
+2024.7.11,219,1.09,"₩37,040,000 ","₩3,405,666,000 ",103.7,2.5,"3,245.44",24.1,2.6,3.5,140.4,0,0
+2024.7.4,218,2.33,"₩42,196,000 ","₩1,812,614,000 ",103.7,2.5,"3,245.44",26.7,4.9,1.1,140.4,0,0
+2024.6.27,217,1.19,"₩41,838,000 ","₩3,506,255,000 ",100.9,2.8,"3,071.70",21.8,2.2,0.9,248.1,0,1
+2024.6.20,216,0.80,"₩51,323,000 ","₩6,382,240,000 ",100.9,2.8,"3,071.70",24,0.8,0.4,248.1,0,1
+2024.6.13,215,0.71,"₩43,975,000 ","₩6,202,282,000 ",100.9,2.8,"3,071.70",24.8,4.2,0,248.1,0,0
+2024.6.6,214,0.76,"₩49,969,000 ","₩6,545,567,000 ",100.9,2.8,"3,071.70",20.6,1,0.2,248.1,1,0
+2024.5.30,213,1.09,"₩45,191,000 ","₩4,140,888,000 ",98.4,2.8,"2,697.67",19.6,1.9,0.2,269.6,0,1
+2024.5.23,212,2.00,"₩44,472,000 ","₩2,219,053,000 ",98.4,2.8,"2,697.67",21.5,7.5,0,269.6,0,1
+2024.5.16,211,4.06,"₩163,671,000 ","₩4,028,521,000 ",98.4,2.8,"2,697.67",14,1.3,3.6,269.6,1,0
+2024.5.9,210,1.34,"₩44,949,000 ","₩3,348,503,000 ",98.4,2.8,"2,697.67",15.3,0.2,0,269.6,0,0
+2024.5.2,209,0.98,"₩54,450,000 ","₩5,584,186,000 ",98.4,2.8,"2,697.67",15.1,0.5,0,269.6,0,0
+2024.4.25,208,0.71,"₩44,109,000 ","₩6,236,653,000 ",100.7,2.8,"2,556.61",15.6,0.3,0,194.9,0,1
+2024.4.18,207,1.14,"₩47,531,000 ","₩4,178,357,000 ",100.7,2.8,"2,556.61",15.9,1.7,0,194.9,0,0
+2024.4.11,206,9.52,"₩646,580,000 ","₩6,792,998,000 ",100.7,2.8,"2,556.61",14.2,1.8,0,194.9,0,0
+2024.4.4,205,10.46,"₩648,145,000 ","₩6,194,625,000 ",100.7,2.8,"2,556.61",12.4,2.9,0.5,194.9,0,0
+2024.3.28,204,0.81,"₩51,439,000 ","₩6,370,452,000 ",100.7,2.8,"2,481.12",9.5,5.1,23.2,201.3,0,1
+2024.3.21,203,0.73,"₩48,307,000 ","₩6,580,401,000 ",100.7,2.8,"2,481.12",4.4,3.2,0,201.3,0,1
+2024.3.14,202,1.05,"₩49,333,000 ","₩4,678,440,000 ",100.7,2.8,"2,481.12",7.6,3.6,0,201.3,0,0
+2024.3.7,201,0.85,"₩52,584,000 ","₩6,173,039,000 ",100.7,2.8,"2,481.12",4,0.3,0.3,201.3,0,0
+2024.2.29,200,1.53,"₩57,340,000 ","₩3,751,956,000 ",101.9,2.6,"2,532.78",4.3,2.3,2.7,111,1,1
+2024.2.22,199,0.83,"₩51,709,000 ","₩6,218,663,000 ",101.9,2.6,"2,532.78",2,4,5,111,0,1
+2024.2.15,198,0.84,"₩56,969,000 ","₩6,771,090,000 ",101.9,2.6,"2,532.78",6,5.4,4.5,111,0,0
+2024.2.8,197,4.08,"₩48,878,000 ","₩1,198,005,000 ",101.9,2.6,"2,532.78",0.6,3.3,0,111,1,0
+2024.2.1,196,1.01,"₩46,999,000 ","₩4,633,636,000 ",101.9,2.6,"2,532.78",3.9,8,1.2,111,0,0
+2024.1.25,195,1.09,"₩43,868,000 ","₩4,017,016,000 ",101.6,3,"2,517.37",-4.1,10.1,0,174.9,0,1
+2024.1.18,194,14.18,"₩649,215,000 ","₩4,577,753,000 ",101.6,3,"2,517.37",6,4.6,5.7,174.9,0,0
+2024.1.11,193,1.08,"₩50,060,000 ","₩4,615,355,000 ",101.6,3,"2,517.37",1.4,0.1,0,174.9,0,0
+2024.1.4,192,6.41,"₩295,209,000 ","₩4,606,155,000 ",101.6,3,"2,517.37",1.5,0.2,0,174.9,0,0
+2023.12.28,191,0.70,"₩47,350,000 ","₩6,718,110,000 ",99.7,3.2,"2,399.49",1.7,9.8,0,154.6,0,1
+2023.12.21,190,0.59,"₩39,655,000 ","₩6,732,215,000 ",99.7,3.2,"2,399.49",-8.1,16.9,0.7,154.6,0,1
+2023.12.14,189,1.10,"₩43,438,000 ","₩3,943,633,000 ",99.7,3.2,"2,399.49",8.8,2.3,23.4,154.6,0,0
+2023.12.7,188,2.14,"₩38,483,000 ","₩1,795,358,000 ",99.7,3.2,"2,399.49",6.5,7.7,0,154.6,0,0
+2023.11.30,187,1.08,"₩43,403,000 ","₩4,020,728,000 ",97.2,2.8,"2,455.91",-1.2,13.3,0,184.5,0,1
+2023.11.23,186,1.13,"₩38,700,000 ","₩3,412,249,000 ",97.2,2.8,"2,455.91",12.1,6.2,0.1,184.5,0,1
+2023.11.16,185,0.80,"₩45,599,000 ","₩5,707,840,000 ",97.2,2.8,"2,455.91",5.9,6.8,9.2,184.5,0,0
+2023.11.9,184,1.18,"₩41,075,000 ","₩3,474,706,000 ",97.2,2.8,"2,455.91",12.7,5.7,5,184.5,0,0
+2023.11.2,183,0.88,"₩49,802,000 ","₩5,690,202,000 ",97.2,2.8,"2,455.91",18.4,2.5,0,184.5,0,0
+2023.10.26,182,1.28,"₩52,101,000 ","₩4,059,772,000 ",98.2,2.5,"2,556.15",15.9,0.2,2.4,222.2,0,1
+2023.10.19,181,0.58,"₩38,772,000 ","₩6,654,330,000 ",98.2,2.5,"2,556.15",15.7,0.1,5.4,222.2,0,0
+2023.10.12,180,1.13,"₩44,404,000 ","₩3,940,725,000 ",98.2,2.5,"2,556.15",15.6,1.4,0,222.2,1,0`;
+
+        // 데이터 파싱 및 전처리
+        function parseData(csvText) {
+            const parsed = Papa.parse(csvText, { header: true, skipEmptyLines: true });
+            const data = parsed.data.filter(row => row['Unclaimed Rate (%)'] && row['Unclaimed Rate (%)'] !== '');
+            
+            return data.map(row => ({
+                unclaimedRate: parseFloat(row['Unclaimed Rate (%)']),
+                consumerSentiment: parseFloat(row['Consumer Sentiment Index']),
+                unemploymentRate: parseFloat(row['Unemployment Rate (%)']),
+                kospiIndex: parseFloat(row['KOSPI Index'].replace(/,/g, '')),
+                avgTemperature: parseFloat(row['Average Temperature (°C)']),
+                temperatureChange: parseFloat(row['Temperature Change (°C)']),
+                precipitation: parseFloat(row['Precipitation (mm)']),
+                sunshineDuration: parseFloat(row['Sunshine Duration (hr)']),
+                holiday: parseInt(row['Holiday (0/1)']),
+                salaryWeek: parseInt(row['Salary Week (0/1)'])
+            }));
+        }
+
+        // 상관계수 계산
+        function calculateCorrelation(x, y) {
+            const n = x.length;
+            const sumX = x.reduce((a, b) => a + b, 0);
+            const sumY = y.reduce((a, b) => a + b, 0);
+            const sumXY = x.reduce((sum, xi, i) => sum + xi * y[i], 0);
+            const sumX2 = x.reduce((sum, xi) => sum + xi * xi, 0);
+            const sumY2 = y.reduce((sum, yi) => sum + yi * yi, 0);
+            
+            const numerator = n * sumXY - sumX * sumY;
+            const denominator = Math.sqrt((n * sumX2 - sumX * sumX) * (n * sumY2 - sumY * sumY));
+            
+            return denominator === 0 ? 0 : numerator / denominator;
+        }
+
+        // 선형 회귀 계산
+        function calculateLinearRegression(x, y) {
+            const n = x.length;
+            const sumX = x.reduce((a, b) => a + b, 0);
+            const sumY = y.reduce((a, b) => a + b, 0);
+            const sumXY = x.reduce((sum, xi, i) => sum + xi * y[i], 0);
+            const sumX2 = x.reduce((sum, xi) => sum + xi * xi, 0);
+            
+            const slope = (n * sumXY - sumX * sumY) / (n * sumX2 - sumX * sumX);
+            const intercept = (sumY - slope * sumX) / n;
+            
+            // R² 계산
+            const yMean = sumY / n;
+            const ssRes = y.reduce((sum, yi, i) => sum + Math.pow(yi - (slope * x[i] + intercept), 2), 0);
+            const ssTot = y.reduce((sum, yi) => sum + Math.pow(yi - yMean, 2), 0);
+            const rSquared = 1 - (ssRes / ssTot);
+            
+            return { slope, intercept, rSquared };
+        }
+
+        // 산점도 생성
+        function createScatterPlot(containerId, xData, yData, xLabel, yLabel, correlation) {
+            const ctx = document.getElementById(containerId).getContext('2d');
+            
+            const scatterData = xData.map((x, i) => ({
+                x: x,
+                y: yData[i]
+            }));
+
+            // 선형 회귀 계산
+            const regression = calculateLinearRegression(xData, yData);
+            
+            // 회귀선 데이터 생성
+            const minX = Math.min(...xData);
+            const maxX = Math.max(...xData);
+            const regressionData = [
+                { x: minX, y: regression.slope * minX + regression.intercept },
+                { x: maxX, y: regression.slope * maxX + regression.intercept }
+            ];
+
+            new Chart(ctx, {
+                type: 'scatter',
+                data: {
+                    datasets: [{
+                        label: `${yLabel} vs ${xLabel}`,
+                        data: scatterData,
+                        backgroundColor: 'rgba(255, 215, 0, 0.6)',
+                        borderColor: 'rgba(255, 215, 0, 1)',
+                        borderWidth: 1,
+                        pointRadius: 2
+                    }, {
+                        label: '회귀선',
+                        data: regressionData,
+                        type: 'line',
+                        borderColor: 'rgba(255, 255, 255, 0.5)',
+                        backgroundColor: 'rgba(255, 255, 255, 0.1)',
+                        borderWidth: 4,
+                        pointRadius: 0,
+                        fill: false,
+                        tension: 0
+                    }]
+                },
+                options: {
+                    responsive: true,
+                    maintainAspectRatio: false,
+                    plugins: {
+                        title: {
+                            display: true,
+                            text: `${yLabel} vs ${xLabel} (R² = ${regression.rSquared.toFixed(3)})`,
+                            font: { size: 12, weight: 'bold', color: '#ffffff' }
+                        },
+                        legend: {
+                            display: true,
+                            position: 'top',
+                            labels: {
+                                font: { size: 9 },
+                                color: '#ffffff'
+                            }
+                        }
+                    },
+                    scales: {
+                        x: {
+                            title: {
+                                display: true,
+                                text: xLabel,
+                                font: { size: 10, color: '#ffffff' }
+                            },
+                            ticks: {
+                                font: { size: 9 },
+                                color: '#ffffff'
+                            },
+                            grid: {
+                                color: '#444444'
+                            }
+                        },
+                        y: {
+                            title: {
+                                display: true,
+                                text: yLabel,
+                                font: { size: 10, color: '#ffffff' }
+                            },
+                            ticks: {
+                                font: { size: 9 },
+                                color: '#ffffff'
+                            },
+                            grid: {
+                                color: '#444444'
+                            }
+                        }
+                    }
+                }
+            });
+        }
+
+        // 메인 실행 함수
+        function initializeVisualization() {
+            const data = parseData(csvData);
+            
+            if (data.length === 0) {
+                document.getElementById('loading').innerHTML = '데이터를 불러올 수 없습니다.';
+                return;
+            }
+
+            // 변수 정의 (Total Unclaimed Prize와 Total Prize Amount 제거, Temperature Change 추가)
+            const variables = [
+                { key: 'consumerSentiment', label: '월간소비자심리지수', data: data.map(d => d.consumerSentiment) },
+                { key: 'unemploymentRate', label: '월간실업률 (%)', data: data.map(d => d.unemploymentRate) },
+                { key: 'kospiIndex', label: '주간코스피지수', data: data.map(d => d.kospiIndex) },
+                { key: 'avgTemperature', label: '평균기온 (°C)', data: data.map(d => d.avgTemperature) },
+                { key: 'temperatureChange', label: '기온변화 (°C)', data: data.map(d => d.temperatureChange) },
+                { key: 'precipitation', label: '강수량 (mm)', data: data.map(d => d.precipitation) },
+                { key: 'sunshineDuration', label: '주간일조시간 (hr)', data: data.map(d => d.sunshineDuration) },
+                { key: 'holiday', label: '공휴일 (0/1)', data: data.map(d => d.holiday) },
+                { key: 'salaryWeek', label: '급여주 (0/1)', data: data.map(d => d.salaryWeek) }
+            ];
+
+            const unclaimedRateData = data.map(d => d.unclaimedRate);
+
+            // 매트릭스 컨테이너 생성
+            const matrixContainer = document.getElementById('matrix-container');
+            matrixContainer.innerHTML = '';
+
+            // 상관계수 저장
+            const correlations = [];
+
+            // 각 변수에 대한 산점도 생성
+            variables.forEach((variable, index) => {
+                const chartContainer = document.createElement('div');
+                chartContainer.className = 'chart-container';
+                
+                const title = document.createElement('div');
+                title.className = 'chart-title';
+                title.textContent = `미수령률 vs ${variable.label}`;
+                
+                const canvas = document.createElement('canvas');
+                canvas.id = `chart-${index}`;
+                
+                chartContainer.appendChild(title);
+                chartContainer.appendChild(canvas);
+                matrixContainer.appendChild(chartContainer);
+
+                // 상관계수 계산
+                const correlation = calculateCorrelation(variable.data, unclaimedRateData);
+                correlations.push({
+                    variable: variable.label,
+                    correlation: correlation
+                });
+
+                // 산점도 생성
+                createScatterPlot(
+                    `chart-${index}`,
+                    variable.data,
+                    unclaimedRateData,
+                    variable.label,
+                    '미수령률 (%)',
+                    correlation
+                );
+            });
+
+            // 상관계수 및 회귀분석 테이블 생성
+            const correlationTable = document.getElementById('correlation-table');
+            correlationTable.innerHTML = `
+                <tr>
+                    <th>변수</th>
+                    <th>상관계수</th>
+                    <th>R²</th>
+                    <th>회귀식</th>
+                    <th>상관강도</th>
+                    <th>해석</th>
+                </tr>
+            `;
+
+            correlations.forEach((corr, index) => {
+                const variable = variables[index];
+                const regression = calculateLinearRegression(variable.data, unclaimedRateData);
+                const absCorr = Math.abs(corr.correlation);
+                let strength = '';
+                let strengthClass = '';
+                let interpretation = '';
+                
+                if (absCorr >= 0.7) {
+                    strength = '강함';
+                    strengthClass = 'strength-strong';
+                } else if (absCorr >= 0.3) {
+                    strength = '보통';
+                    strengthClass = 'strength-moderate';
+                } else {
+                    strength = '약함';
+                    strengthClass = 'strength-weak';
+                }
+
+                if (corr.correlation > 0) {
+                    interpretation = '양의 상관관계 (미수령률 증가 시 해당 변수도 증가)';
+                } else if (corr.correlation < 0) {
+                    interpretation = '음의 상관관계 (미수령률 증가 시 해당 변수는 감소)';
+                } else {
+                    interpretation = '상관관계 없음';
+                }
+
+                const regressionEquation = `y = ${regression.slope.toFixed(3)}x + ${regression.intercept.toFixed(3)}`;
+
+                const row = document.createElement('tr');
+                row.innerHTML = `
+                    <td class="${strengthClass}">${corr.variable}</td>
+                    <td class="correlation-value ${corr.correlation > 0 ? 'positive' : 'negative'} ${absCorr < 0.3 ? 'weak' : ''}">
+                        ${corr.correlation.toFixed(3)}
+                    </td>
+                    <td class="correlation-value ${regression.rSquared > 0.5 ? 'positive' : 'negative'} ${regression.rSquared < 0.1 ? 'weak' : ''}">
+                        ${regression.rSquared.toFixed(3)}
+                    </td>
+                    <td class="${strengthClass}" style="font-size: 0.8em;">${regressionEquation}</td>
+                    <td class="${strengthClass}">${strength}</td>
+                    <td class="${strengthClass}">${interpretation}</td>
+                `;
+                correlationTable.appendChild(row);
+            });
+
+            // 로딩 숨기고 결과 표시
+            document.getElementById('loading').style.display = 'none';
+            document.getElementById('matrix-container').style.display = 'grid';
+            document.getElementById('correlation-info').style.display = 'block';
+        }
+
+        // 페이지 로드 시 실행
+        document.addEventListener('DOMContentLoaded', initializeVisualization);
+    </script>
+</body>
+</html>
